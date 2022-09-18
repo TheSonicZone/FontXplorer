@@ -21,6 +21,7 @@ var code_blocks byte
 type block struct {
 	blockstart uint16
 	blockend   uint16
+	char_range uint16
 }
 type codeblocktable struct {
 	blockentry [255]block
@@ -76,6 +77,35 @@ func ReadFont(filename string) ([]byte, error) {
 	_, err = bufr.Read(rawbytes)
 
 	return rawbytes, err
+}
+
+//-------------------------------------------------------------------------
+// Name: lookup_block
+// Function: Find the block in which the given Shift-JIS code falls within
+// Parameters: Shift-JIS code, Pointer to location where offset shall be written
+// Returns: Number of the code table in which the Shift-JIS code resides
+//          returns -1 if given Shift-JIS code is not located in any of the code tables
+//--------------------------------------------------------------------------
+func lookup_block(jis uint16, offset *uint32) int {
+
+	var low_end uint16
+	var high_end uint16
+	var code_range uint16
+	var code_total uint32 = 0
+	for n := 0; n < int(code_blocks); n++ {
+		low_end = codetable.blockentry[n].blockstart
+		high_end = codetable.blockentry[n].blockend
+		if n > 0 {
+			code_range = codetable.blockentry[n-1].char_range
+			code_total += uint32(code_range)
+		}
+		if jis >= low_end && jis <= high_end {
+			*offset = code_total
+			return n
+		}
+
+	}
+	return -1
 }
 
 //-----------------------------------------------------------------------------------
@@ -143,6 +173,7 @@ func main() {
 			data = []byte{fontdata[fontpointer], fontdata[fontpointer+1]}
 			fontpointer += 2
 			codetable.blockentry[n].blockend = binary.LittleEndian.Uint16(data)
+			codetable.blockentry[n].char_range = codetable.blockentry[n].blockend - codetable.blockentry[n].blockstart
 		}
 
 		fmt.Println("                Font Information                  ")
@@ -152,25 +183,41 @@ func main() {
 		fmt.Println(fmt.Sprintf("         Character Height: %d pixels", height))
 		fmt.Println(fmt.Sprintf("         Code flag: %d ", code_flag))
 		if code_flag == 1 {
-			fmt.Println("                    └ Shift-JIS")
-		} else {
-			fmt.Println("                    └ ANSI")
+			fmt.Println("                    ^ Shift-JIS font")
 		}
+
 		fmt.Println(fmt.Sprintf("         Number of code blocks: %d ", code_blocks))
 		for n := 0; n < int(code_blocks); n++ {
-			fmt.Println(fmt.Sprintf("                Block #%2d :    Block Start: %04X    Block End: %04X   ", n+1,
-				codetable.blockentry[n].blockstart, codetable.blockentry[n].blockend))
+			fmt.Println(fmt.Sprintf("                Block #%2d :    Block Start: %04X    Block End: %04X   Range: %04X", n+1,
+				codetable.blockentry[n].blockstart, codetable.blockentry[n].blockend, codetable.blockentry[n].char_range))
 		}
 
 		// Begin glyph dumping
 		fmt.Println("       ")
-		fmt.Println("                Font Glyphs                                ")
+		fmt.Println("                Font Glyph Location Calcs                  ")
 		fmt.Println("    -------------------------------------------------------")
-		fmt.Println(fmt.Sprintf("      Current pointer location in file: %d   0x%04X", fontpointer, fontpointer))
+		fmt.Println(fmt.Sprintf("      Font glyph data start location in file: %d   0x%04X", fontpointer, fontpointer))
+
+		var shift_jis_code uint16 = 0x8141 // Test value to check lookup performance etc..
+		fmt.Println(fmt.Sprintf("          Shift-JIS code as input: %04X", shift_jis_code))
+		var offset uint32
+		res := lookup_block(shift_jis_code, &offset)
+		if res == -1 {
+			fmt.Println("             Given Shift-JIS code not found in code tables")
+		} else {
+			fmt.Println(fmt.Sprintf("          Shift-JIS code located in code table %d    Offset returned: %d (%04X)", res+1, offset, offset))
+			char_range_start := codetable.blockentry[res].blockstart
+			char_distance := shift_jis_code - char_range_start
+			var block_distance uint16 = uint16(width) + uint16(height)
+			file_address := block_distance * char_distance
+			file_address += uint16(fontpointer)
+			fmt.Println(fmt.Sprintf("           Char range start: %04X     Distance: %d chars", char_range_start, char_distance))
+			fmt.Println(fmt.Sprintf("           Computed location in file: %04X", file_address))
+		}
 
 		// This is test code... we know the font is 16 x 16 so to get a quick overview we will just dump using 16 x 16
-		for r := 0; r < 1524; r++ { // outer loop... 16 chars
-			fmt.Println(fmt.Sprintf(" Char Offset: %d", r))
+		for r := 0; r < 150; r++ { // outer loop... 16 chars
+			fmt.Println(fmt.Sprintf(" Char Offset: %d     Absolute Address in file: %d %08X(HEX)", r, fontpointer, fontpointer))
 			for q := 0; q < 16; q++ { // inner loop... 16 cols of 2 bytes
 				fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(fontdata[fontpointer]), byte2glyph(fontdata[fontpointer+1])))
 				fontpointer += 2
