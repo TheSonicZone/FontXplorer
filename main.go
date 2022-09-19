@@ -119,9 +119,16 @@ func lookup_block(jis uint16, offset *uint32) int {
 func showChar(address uint32, src []byte, width byte, height byte) {
 
 	var address_in_file = address
-	for q := 0; q < 16; q++ { // inner loop... 16 cols of 2 bytes
-		fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(src[address_in_file]), byte2glyph(src[address_in_file+1])))
-		address_in_file += 2
+	for q := 0; q < int(width); q++ { // inner loop... 16 cols of 2 bytes
+		if height == 16 {
+			fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(src[address_in_file]), byte2glyph(src[address_in_file+1])))
+			address_in_file += 2
+		}
+		if height == 8 {
+			fmt.Println(fmt.Sprintf(" %s", byte2glyph(src[address_in_file])))
+			address_in_file += 1
+		}
+
 	}
 
 }
@@ -202,6 +209,8 @@ func main() {
 		fmt.Println(fmt.Sprintf("         Code flag: %d ", code_flag))
 		if code_flag == 1 {
 			fmt.Println("                    ^ Shift-JIS font")
+		} else {
+			fmt.Println("                    ^ ANK font")
 		}
 
 		fmt.Println(fmt.Sprintf("         Number of code blocks: %d ", code_blocks))
@@ -216,7 +225,7 @@ func main() {
 		fmt.Println("    -------------------------------------------------------")
 		fmt.Println(fmt.Sprintf("      Font glyph data start location in file:  0x%04X   (%d)", fontpointer, fontpointer))
 
-		var shift_jis_code uint16 = 0x8E4F // Test value to check lookup performance etc..
+		var shift_jis_code uint16 = 0x82A0 // Test value to check lookup performance etc.. Shift-JIS 82A0 = あ
 		fmt.Println(fmt.Sprintf("          Shift-JIS code as input: %04X", shift_jis_code))
 		var offset uint32
 		block_location := lookup_block(shift_jis_code, &offset)
@@ -224,30 +233,35 @@ func main() {
 			fmt.Println("             Given Shift-JIS code not found in code tables")
 		} else {
 
+			// TODO - unsigned integers all to uint32 type to avoid casting when ported to embedded C
+			// TODO - width and height need modulo math to compensate for widths that don't fit into a byte (see Elm-chan's explanation)
 			offset += uint32(block_location)
 			char_start := codetable.blockentry[block_location].blockstart
-			char_offset := (shift_jis_code - char_start) * uint16(width+height)
-			char_address_base := uint32(fontpointer) + uint32(width+height)*uint32(offset)
+			char_offset := (shift_jis_code - char_start) * uint16((width/8)*height)
+			char_address_base := uint32(fontpointer) + uint32((width/8)*height)*uint32(offset)
 			char_effective_address := char_address_base + uint32(char_offset)
 			fmt.Println(fmt.Sprintf("          Shift-JIS code located in code table %d    Table Offset: %d (%04X)", block_location+1, offset, offset))
 			fmt.Println(fmt.Sprintf("          Shift-JIS first char code in block: %04X     Offset: %d bytes", char_start, char_offset))
-			fmt.Println(fmt.Sprintf("          Base address of char range in file: %04X", char_address_base))
+			fmt.Println(fmt.Sprintf("          Base address of char range in file: 0x%04X", char_address_base))
+			fmt.Println(fmt.Sprintf("          Absolute address of char glyph in file: 0x%04X", char_effective_address))
 			fmt.Println("   ")
 			fmt.Println(fmt.Sprintf("---------- Char Code (Shift-JIS):%04X --------", shift_jis_code))
 			showChar(char_effective_address, fontdata, width, height)
 			fmt.Println("--------------------------------------------")
+			//return
 		}
 		fmt.Println("                       ")
-		// This is test code... we know the font is 16 x 16 so to get a quick overview we will just dump using 16 x 16
-		/*		for r := 0; r < 6; r++ { // outer loop... 16 chars
-					fmt.Println(fmt.Sprintf(" Char Offset: %d     Absolute Address in file: %d %08X(HEX)", r, fontpointer, fontpointer))
-					for q := 0; q < 16; q++ { // inner loop... 16 cols of 2 bytes
-						fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(fontdata[fontpointer]), byte2glyph(fontdata[fontpointer+1])))
-						fontpointer += 2
-					}
-
-					fmt.Println("         ")
+		/*
+			// This is test code...
+			for r := 0; r < 24; r++ { // outer loop... 16 chars
+				fmt.Println(fmt.Sprintf(" Char Offset: %d     Absolute Address in file: %d %08X(HEX)", r, fontpointer, fontpointer))
+				for q := 0; q < 8; q++ { // inner loop... 8 cols of 1
+					fmt.Println(fmt.Sprintf(" %s", byte2glyph(fontdata[fontpointer])))
+					fontpointer += 1
 				}
+
+				fmt.Println("         ")
+			}
 		*/
 	} else {
 		fmt.Println(" [ERROR] Invalid font signature. Is this a valid FONTX2 font file?   Exiting")
