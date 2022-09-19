@@ -8,7 +8,7 @@ import (
 )
 
 // Program variables
-
+//------------------------------------------------------------------------
 // Font Information
 // Refer to http://elm-chan.org/docs/dosv/fontx_e.html
 var signature = make([]byte, 6)
@@ -35,7 +35,7 @@ var codetable codeblocktable
 
 //-----------------------------------------------------------------------------
 // Name: byte2glyph
-// Function: Render the byte, horizontally as a glyph using asterisks and dashes
+// Function: Render the byte, horizontally as a glyph using codepage 437 characters
 // Parameters: byte to glyph
 // Returns: formatted string
 //-----------------------------------------------------------------------------
@@ -106,6 +106,24 @@ func lookup_block(jis uint16, offset *uint32) int {
 
 	}
 	return -1
+}
+
+//----------------------------------------------------------------------------------
+// Name: showChar
+// Function: Render the character glyph to the console
+// Parameters: Address in file where data for this particular glyph begins
+//             Pointer to array holding file data
+//             Width and Height
+// Returns: nil
+//----------------------------------------------------------------------------------
+func showChar(address uint32, src []byte, width byte, height byte) {
+
+	var address_in_file = address
+	for q := 0; q < 16; q++ { // inner loop... 16 cols of 2 bytes
+		fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(src[address_in_file]), byte2glyph(src[address_in_file+1])))
+		address_in_file += 2
+	}
+
 }
 
 //-----------------------------------------------------------------------------------
@@ -188,7 +206,7 @@ func main() {
 
 		fmt.Println(fmt.Sprintf("         Number of code blocks: %d ", code_blocks))
 		for n := 0; n < int(code_blocks); n++ {
-			fmt.Println(fmt.Sprintf("                Block #%2d :    Block Start: %04X    Block End: %04X   Range: %04X", n+1,
+			fmt.Println(fmt.Sprintf("            Block #%2d :    Block Start: %04X    Block End: %04X   Range: %04X", n+1,
 				codetable.blockentry[n].blockstart, codetable.blockentry[n].blockend, codetable.blockentry[n].char_range))
 		}
 
@@ -196,36 +214,41 @@ func main() {
 		fmt.Println("       ")
 		fmt.Println("                Font Glyph Location Calcs                  ")
 		fmt.Println("    -------------------------------------------------------")
-		fmt.Println(fmt.Sprintf("      Font glyph data start location in file: %d   0x%04X", fontpointer, fontpointer))
+		fmt.Println(fmt.Sprintf("      Font glyph data start location in file:  0x%04X   (%d)", fontpointer, fontpointer))
 
-		var shift_jis_code uint16 = 0x8141 // Test value to check lookup performance etc..
+		var shift_jis_code uint16 = 0x8E4F // Test value to check lookup performance etc..
 		fmt.Println(fmt.Sprintf("          Shift-JIS code as input: %04X", shift_jis_code))
 		var offset uint32
-		res := lookup_block(shift_jis_code, &offset)
-		if res == -1 {
+		block_location := lookup_block(shift_jis_code, &offset)
+		if block_location == -1 {
 			fmt.Println("             Given Shift-JIS code not found in code tables")
 		} else {
-			fmt.Println(fmt.Sprintf("          Shift-JIS code located in code table %d    Offset returned: %d (%04X)", res+1, offset, offset))
-			char_range_start := codetable.blockentry[res].blockstart
-			char_distance := shift_jis_code - char_range_start
-			var block_distance uint16 = uint16(width) + uint16(height)
-			file_address := block_distance * char_distance
-			file_address += uint16(fontpointer)
-			fmt.Println(fmt.Sprintf("           Char range start: %04X     Distance: %d chars", char_range_start, char_distance))
-			fmt.Println(fmt.Sprintf("           Computed location in file: %04X", file_address))
-		}
 
+			offset += uint32(block_location)
+			char_start := codetable.blockentry[block_location].blockstart
+			char_offset := (shift_jis_code - char_start) * uint16(width+height)
+			char_address_base := uint32(fontpointer) + uint32(width+height)*uint32(offset)
+			char_effective_address := char_address_base + uint32(char_offset)
+			fmt.Println(fmt.Sprintf("          Shift-JIS code located in code table %d    Table Offset: %d (%04X)", block_location+1, offset, offset))
+			fmt.Println(fmt.Sprintf("          Shift-JIS first char code in block: %04X     Offset: %d bytes", char_start, char_offset))
+			fmt.Println(fmt.Sprintf("          Base address of char range in file: %04X", char_address_base))
+			fmt.Println("   ")
+			fmt.Println(fmt.Sprintf("---------- Char Code (Shift-JIS):%04X --------", shift_jis_code))
+			showChar(char_effective_address, fontdata, width, height)
+			fmt.Println("--------------------------------------------")
+		}
+		fmt.Println("                       ")
 		// This is test code... we know the font is 16 x 16 so to get a quick overview we will just dump using 16 x 16
-		for r := 0; r < 150; r++ { // outer loop... 16 chars
-			fmt.Println(fmt.Sprintf(" Char Offset: %d     Absolute Address in file: %d %08X(HEX)", r, fontpointer, fontpointer))
-			for q := 0; q < 16; q++ { // inner loop... 16 cols of 2 bytes
-				fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(fontdata[fontpointer]), byte2glyph(fontdata[fontpointer+1])))
-				fontpointer += 2
-			}
+		/*		for r := 0; r < 6; r++ { // outer loop... 16 chars
+					fmt.Println(fmt.Sprintf(" Char Offset: %d     Absolute Address in file: %d %08X(HEX)", r, fontpointer, fontpointer))
+					for q := 0; q < 16; q++ { // inner loop... 16 cols of 2 bytes
+						fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(fontdata[fontpointer]), byte2glyph(fontdata[fontpointer+1])))
+						fontpointer += 2
+					}
 
-			fmt.Println("         ")
-		}
-
+					fmt.Println("         ")
+				}
+		*/
 	} else {
 		fmt.Println(" [ERROR] Invalid font signature. Is this a valid FONTX2 font file?   Exiting")
 		return
