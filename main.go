@@ -13,8 +13,8 @@ import (
 // Refer to http://elm-chan.org/docs/dosv/fontx_e.html
 var signature = make([]byte, 6)
 var fontname = make([]byte, 8)
-var width byte
-var height byte
+var width uint16
+var height uint16
 var code_flag byte
 var code_blocks byte
 
@@ -32,6 +32,22 @@ var codetable codeblocktable
 //----------------------------------------------------------------------------------
 // Functions
 //----------------------------------------------------------------------------------
+
+//----------------------------------------------------------------------------------
+// Name: ExpandToBoundary
+// Function: Expands a given font's width to a byte boundary
+// Parameters: Width specified in font file
+// Returns: Expanded width that will fit into byte boundaries
+//-----------------------------------------------------------------------------------
+func ExpandToBoundary(width uint16) uint16 {
+	x := width
+	y := x % 8 // this is useful for determining overlap
+	z := x / 8
+	if y != 0 {
+		z++
+	}
+	return z * 8
+}
 
 //-----------------------------------------------------------------------------
 // Name: byte2glyph
@@ -52,6 +68,7 @@ func byte2glyph(data byte) string {
 	return s
 }
 
+//-------------------------------------------------------
 // Name: ReadFont
 // Function: Read entire font file to memory
 // Parameter: filename (string type)
@@ -116,10 +133,21 @@ func lookup_block(jis uint16, offset *uint32) int {
 //             Width and Height
 // Returns: nil
 //----------------------------------------------------------------------------------
-func showChar(address uint32, src []byte, width byte, height byte) {
+func showChar(address uint32, src []byte, width uint16, height uint16) {
 
 	var address_in_file = address
-	for q := 0; q < int(width); q++ { // inner loop... 16 cols of 2 bytes
+	for q := 0; q < int(width); q++ {
+		if height == 32 {
+			fmt.Println(fmt.Sprintf(" %s%s%s%s",
+				byte2glyph(src[address_in_file]),
+				byte2glyph(src[address_in_file+1]),
+				byte2glyph(src[address_in_file+2]),
+				byte2glyph(src[address_in_file+3])))
+		}
+		if height == 24 {
+			fmt.Println(fmt.Sprintf(" %s%s%s", byte2glyph(src[address_in_file]), byte2glyph(src[address_in_file+1]), byte2glyph(src[address_in_file+2])))
+			address_in_file += 3
+		}
 		if height == 16 {
 			fmt.Println(fmt.Sprintf(" %s%s", byte2glyph(src[address_in_file]), byte2glyph(src[address_in_file+1])))
 			address_in_file += 2
@@ -145,7 +173,8 @@ func main() {
 	fmt.Println(" ")
 	fmt.Println("+----------------------------------------------------------------------+")
 	fmt.Println("|                             FontXplorer                              |")
-	fmt.Println("|                   Utility to preview DOS FontX files                 |")
+	fmt.Println("|                 Utility to preview CJK DOS FontX characters          |")
+	fmt.Println("|  For development of GraphLCD2 to support Unicode and Asian languages |")
 	fmt.Println("|                              By Sonic2k                              |")
 	fmt.Println("+----------------------------------------------------------------------+")
 	fmt.Println("  ")
@@ -181,14 +210,17 @@ func main() {
 		}
 
 		// Parse out width and height, code flag
-		width = fontdata[fontpointer]
+		width = uint16(fontdata[fontpointer])
 		fontpointer++
-		height = fontdata[fontpointer]
+		height = uint16(fontdata[fontpointer])
 		fontpointer++
 		code_flag = fontdata[fontpointer]
 		fontpointer++
 		code_blocks = fontdata[fontpointer]
 		fontpointer++
+
+		// Expand width value to fit into 8 bit rows
+		width = ExpandToBoundary(width)
 
 		// Fill in the code block table
 		for n := 0; n < int(code_blocks); n++ {
@@ -233,8 +265,6 @@ func main() {
 			fmt.Println("             Given Shift-JIS code not found in code tables")
 		} else {
 
-			// TODO - unsigned integers all to uint32 type to avoid casting when ported to embedded C
-			// TODO - width and height need modulo math to compensate for widths that don't fit into a byte (see Elm-chan's explanation)
 			offset += uint32(block_location)
 			char_start := codetable.blockentry[block_location].blockstart
 			char_offset := (shift_jis_code - char_start) * uint16((width/8)*height)
@@ -251,18 +281,7 @@ func main() {
 			//return
 		}
 		fmt.Println("                       ")
-		/*
-			// This is test code...
-			for r := 0; r < 24; r++ { // outer loop... 16 chars
-				fmt.Println(fmt.Sprintf(" Char Offset: %d     Absolute Address in file: %d %08X(HEX)", r, fontpointer, fontpointer))
-				for q := 0; q < 8; q++ { // inner loop... 8 cols of 1
-					fmt.Println(fmt.Sprintf(" %s", byte2glyph(fontdata[fontpointer])))
-					fontpointer += 1
-				}
 
-				fmt.Println("         ")
-			}
-		*/
 	} else {
 		fmt.Println(" [ERROR] Invalid font signature. Is this a valid FONTX2 font file?   Exiting")
 		return
