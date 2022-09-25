@@ -281,6 +281,7 @@ func main() {
 			//return
 		}
 		fmt.Println("                       ")
+		fmt.Println(" Complete / ができましたです!")
 
 	} else {
 		fmt.Println(" [ERROR] Invalid font signature. Is this a valid FONTX2 font file?   Exiting")
